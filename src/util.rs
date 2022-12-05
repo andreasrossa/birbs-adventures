@@ -1,8 +1,7 @@
 use bevy::prelude::*;
+use bevy_rapier2d::prelude::Collider;
 
-use crate::{Pipe, PipeBundle, PipePosition};
-const PIPE_OFFSET: f32 = 30.0;
-const PIPE_WIDTH: f32 = 100.0;
+use crate::{Pipe, PipeBundle, PipePosition, PIPE_WIDTH};
 
 /**
  * Returns a rectangle
@@ -21,7 +20,8 @@ pub fn get_pipe_from_position_and_size(
     };
 
     PipeBundle {
-        _p: Pipe::new(pos),
+        pipe: Pipe::new(pos),
+        collider: Collider::cuboid(PIPE_WIDTH / 2.0, size / 2.0),
         sprite: SpriteBundle {
             sprite: Sprite {
                 color: Color::rgb(0.25, 0.25, 0.75),
@@ -29,7 +29,7 @@ pub fn get_pipe_from_position_and_size(
                 ..default()
             },
             transform: Transform::from_translation(Vec3::new(
-                camera_translation.x + (window_width / 2.0) + PIPE_OFFSET,
+                camera_translation.x + (window_width / 2.0) + PIPE_WIDTH / 2.0,
                 pipe_y_pos,
                 camera_translation.z,
             )),

@@ -3,7 +3,10 @@ pub mod physics;
 pub mod util;
 
 use bevy::prelude::*;
+use bevy_rapier2d::prelude::*;
 use birb::*;
+use physics::Acceleration;
+use physics::Velocity;
 use physics::*;
 use rand::prelude::*;
 use util::get_pipe_from_position_and_size;
@@ -20,6 +23,12 @@ fn main() {
         .init_resource::<Game>()
         .init_resource::<PipeSpawnConfig>()
         .add_plugins(DefaultPlugins)
+        .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+        .add_plugin(RapierDebugRenderPlugin {
+            enabled: true,
+            always_on_top: true,
+            ..Default::default()
+        })
         .add_startup_system(setup)
         .add_system_set(
             SystemSet::new()
@@ -34,6 +43,8 @@ fn main() {
                 .with_system(player_input),
         )
         .add_system(spawn_pipes)
+        .add_system(despawn_pipes)
+        .add_system(game_over.at_end())
         .add_system(rotate_birb.after(SystemOrder::Physics))
         .add_system(follow_cam.label(SystemOrder::Camera))
         .run();
@@ -42,15 +53,20 @@ fn main() {
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>, mut game: ResMut<Game>) {
     let camera = commands.spawn(Camera2dBundle::default()).id();
 
+    let birb_transform = Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(0.2));
     let birb = commands
         .spawn(Birb)
         .insert(SpriteBundle {
             texture: asset_server.load("birb/blue/birb.png"),
-            transform: Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(0.2)),
+            transform: birb_transform,
             ..default()
         })
         .insert(Velocity(Vec3::new(300.0, 0.0, 0.0)))
         .insert(Acceleration(Vec3::new(0.0, -300.0, 0.0)))
+        .insert(Collider::cuboid(110.0, 100.0))
+        .insert(ActiveCollisionTypes::default() | ActiveCollisionTypes::STATIC_STATIC)
+        .insert(ActiveEvents::COLLISION_EVENTS)
+        // .insert(Sensor)
         .id();
 
     game.player.entity = Some(birb);
@@ -90,13 +106,25 @@ impl Pipe {
 pub struct PipeBundle {
     #[bundle]
     sprite: SpriteBundle,
+    collider: Collider,
+    _s: Sensor,
+    pipe: Pipe,
+}
 
-    _p: Pipe,
+fn game_over(mut events: EventReader<CollisionEvent>) {
+    // if !events.is_empty() {
+    //     println!("Collided!");
+    // }
+    for _event in events.iter() {
+        panic!();
+    }
 }
 
 fn player_input(mut query: Query<&mut Velocity>, keyboard: Res<Input<KeyCode>>) {
     if keyboard.just_pressed(KeyCode::Space) {
-        query.for_each_mut(|mut velocity| velocity.0.y = 400.0)
+        for mut velocity in query.iter_mut() {
+            velocity.0.y = 400.0;
+        }
     }
 }
 
@@ -135,10 +163,12 @@ impl Default for PipeSpawnConfig {
     }
 }
 
-const PIPE_SPACING: f32 = 180.0;
-const HALF_PIPE_SPACING: f32 = PIPE_SPACING / 2.0;
-const HOLE_OFFSET: f32 = MIN_PIPE_HEIGHT + HALF_PIPE_SPACING;
-const MIN_PIPE_HEIGHT: f32 = 50.0;
+pub const PIPE_SPACING: f32 = 180.0;
+pub const HALF_PIPE_SPACING: f32 = PIPE_SPACING / 2.0;
+pub const HOLE_OFFSET: f32 = MIN_PIPE_HEIGHT + HALF_PIPE_SPACING;
+pub const MIN_PIPE_HEIGHT: f32 = 50.0;
+pub const PIPE_WIDTH: f32 = 100.0;
+pub const HALF_PIPE_WIDTH: f32 = PIPE_WIDTH / 2.0;
 
 /**
  * Spawn pipes shortly before they're about to come in view
@@ -178,6 +208,28 @@ fn spawn_pipes(
                     window.height(),
                     window.width(),
                 ));
+            }
+        }
+    }
+}
+
+fn despawn_pipes(
+    mut commands: Commands,
+    camera_query: Query<&Transform, With<Camera>>,
+    pipe_query: Query<(Entity, &Transform), With<Pipe>>,
+    windows: Res<Windows>,
+    game: Res<Game>,
+) {
+    for (entity, transform) in pipe_query.iter() {
+        if let Some(window) = windows.get_primary() {
+            if let Ok(camera_transform) = camera_query.get(game.camera.unwrap()) {
+                // check if pipe is out of view
+                // substract half of window width to get left side of camera (x of camera is in the middle of the window)
+                if transform.translation.x
+                    < camera_transform.translation.x - window.width() / 2.0 - HALF_PIPE_WIDTH
+                {
+                    commands.entity(entity).despawn();
+                }
             }
         }
     }
